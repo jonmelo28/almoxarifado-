@@ -1,0 +1,61 @@
+CREATE TABLE usuarios (
+ id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, nome VARCHAR(120) NOT NULL,
+ email VARCHAR(190) NOT NULL UNIQUE, identificacao VARCHAR(60) NOT NULL UNIQUE,
+ senha_hash VARCHAR(100) NOT NULL, papel ENUM('ADM','GESTOR','COLABORADOR') NOT NULL,
+ ativo BOOLEAN NOT NULL DEFAULT TRUE, bloqueado BOOLEAN NOT NULL DEFAULT FALSE,
+ telegram_id BIGINT UNSIGNED NULL UNIQUE,
+ criado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), atualizado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE sessoes (session_id VARCHAR(128) COLLATE utf8mb4_bin NOT NULL PRIMARY KEY, expires INT UNSIGNED NOT NULL, data MEDIUMTEXT COLLATE utf8mb4_bin, INDEX idx_sessoes_expires(expires)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE categorias (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, nome VARCHAR(100) NOT NULL UNIQUE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE materiais (
+ id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(60) NOT NULL UNIQUE, nome VARCHAR(160) NOT NULL,
+ descricao TEXT NOT NULL, categoria_id INT UNSIGNED NOT NULL, unidade ENUM('UN','KG','L','M') NOT NULL,
+ saldo DECIMAL(15,3) NOT NULL DEFAULT 0, estoque_minimo DECIMAL(15,3) NOT NULL DEFAULT 0, ativo BOOLEAN NOT NULL DEFAULT TRUE,
+ criado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), atualizado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+ FOREIGN KEY(categoria_id) REFERENCES categorias(id), CHECK(saldo >= 0), CHECK(estoque_minimo >= 0), INDEX idx_material_nome(nome)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE tarefas (
+ id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, responsavel_id INT UNSIGNED NOT NULL, criador_id INT UNSIGNED NOT NULL,
+ titulo VARCHAR(160) NOT NULL, descricao TEXT NOT NULL, data_programada DATE NOT NULL, hora_inicio TIME NOT NULL, hora_fim TIME NOT NULL,
+ prioridade ENUM('BAIXA','MEDIA','ALTA') NOT NULL, status ENUM('PENDENTE','EM_ANDAMENTO','CONCLUIDA','CANCELADA') NOT NULL DEFAULT 'PENDENTE',
+ inicio_real DATETIME(3) NULL, conclusao_real DATETIME(3) NULL, observacoes TEXT NOT NULL, motivo_cancelamento TEXT NULL,
+ criado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), atualizado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+ FOREIGN KEY(responsavel_id) REFERENCES usuarios(id), FOREIGN KEY(criador_id) REFERENCES usuarios(id),
+ CHECK(hora_fim > hora_inicio), INDEX idx_agenda(responsavel_id,data_programada,status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE auditoria (
+ id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, ator_id INT UNSIGNED NOT NULL, acao VARCHAR(100) NOT NULL,
+ entidade VARCHAR(60) NOT NULL, entidade_id BIGINT UNSIGNED NOT NULL, dados JSON NOT NULL,
+ origem ENUM('painel','telegram','cli') NOT NULL, criado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ FOREIGN KEY(ator_id) REFERENCES usuarios(id), INDEX idx_auditoria_data(criado_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE movimentacoes (
+ id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, material_id INT UNSIGNED NOT NULL,
+ tipo ENUM('ENTRADA','SAIDA','DEVOLUCAO','AJUSTE','ESTORNO') NOT NULL, quantidade DECIMAL(15,3) NOT NULL,
+ responsavel_id INT UNSIGNED NOT NULL, beneficiario_id INT UNSIGNED NULL, tarefa_id INT UNSIGNED NULL,
+ motivo VARCHAR(500) NOT NULL, saldo_anterior DECIMAL(15,3) NOT NULL, saldo_posterior DECIMAL(15,3) NOT NULL,
+ origem ENUM('painel','telegram','cli') NOT NULL, auditoria_id BIGINT UNSIGNED NOT NULL,
+ chave_idempotencia VARCHAR(100) NOT NULL, fingerprint CHAR(64) NOT NULL, estorno_de BIGINT UNSIGNED NULL UNIQUE,
+ criado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ FOREIGN KEY(material_id) REFERENCES materiais(id), FOREIGN KEY(responsavel_id) REFERENCES usuarios(id),
+ FOREIGN KEY(beneficiario_id) REFERENCES usuarios(id), FOREIGN KEY(tarefa_id) REFERENCES tarefas(id),
+ FOREIGN KEY(auditoria_id) REFERENCES auditoria(id), FOREIGN KEY(estorno_de) REFERENCES movimentacoes(id),
+ UNIQUE KEY idx_idempotencia(responsavel_id,chave_idempotencia), INDEX idx_mov_data(criado_em), CHECK(saldo_posterior >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE historico_tarefas (
+ id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, tarefa_id INT UNSIGNED NOT NULL, ator_id INT UNSIGNED NOT NULL,
+ dados JSON NOT NULL, criado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ FOREIGN KEY(tarefa_id) REFERENCES tarefas(id), FOREIGN KEY(ator_id) REFERENCES usuarios(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE tokens_vinculacao_telegram (
+ token_hash CHAR(64) PRIMARY KEY, usuario_id INT UNSIGNED NOT NULL, expira_em DATETIME(3) NOT NULL, usado_em DATETIME(3) NULL,
+ FOREIGN KEY(usuario_id) REFERENCES usuarios(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE notificacoes (
+ id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, usuario_id INT UNSIGNED NOT NULL, chave VARCHAR(190) NOT NULL UNIQUE,
+ mensagem TEXT NOT NULL, enviada_em DATETIME(3) NULL, tentativas INT NOT NULL DEFAULT 0, proxima_tentativa DATETIME(3) NULL,
+ criado_em DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), FOREIGN KEY(usuario_id) REFERENCES usuarios(id), INDEX idx_outbox(enviada_em,proxima_tentativa)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE configuracoes (chave VARCHAR(60) PRIMARY KEY, valor VARCHAR(200) NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO configuracoes (chave,valor) VALUES ('permitir_sobreposicao','false');

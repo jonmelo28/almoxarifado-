@@ -1,0 +1,6 @@
+CREATE TABLE permissoes_bot (
+ usuario_id INT UNSIGNED PRIMARY KEY,
+ permissoes JSON NOT NULL,
+ versao INT UNSIGNED NOT NULL DEFAULT 1,
+ FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
